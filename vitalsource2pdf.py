@@ -17,7 +17,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--output', default='./VitalSource/')
 parser.add_argument('--isbn', required=True)
 parser.add_argument('--delay', default=2, type=int, help='Delay between pages to let them load in seconds.')
-parser.add_argument('--pages', default=None, type=int, help='Override how many pages to save.')
+parser.add_argument('--pages', default=None, type=int, help='Override how many pages to save.') # TODO
 parser.add_argument('--disable-web-security', action='store_true', help="If pages aren't loading then you can try disabling CORS protections.")
 args = parser.parse_args()
 

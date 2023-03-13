@@ -19,7 +19,6 @@ designed, or just don't work. I designed my scraper to be as simple as possible 
 
 ```bash
 pip install -r requirements.txt
-sudo apt-get install python3-tk python3-dev
 ```
 
 Make sure you have Chrome installed as it uses Selenium. The Webdriver binary will be automatically downloaded.
