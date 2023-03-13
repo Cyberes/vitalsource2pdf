@@ -10,7 +10,7 @@ This is an automated, all-in-one scraper to convert VitalSource textbooks into P
   of the book.
 - Table of contents creation.
 - No funny stuff. No wierd endpoints are used and no hacky scraping is preformed.
-- Almost completly transparent scraping. All actions are ones that a normal user would do.
+- Almost completly transparent. All actions are ones that a normal user would do.
 
 The goal of this project is for this to "just work." There are many other VitalSource scrapers out there that are wierd, poorly
 designed, or are broken. I designed my scraper to be as simple while producing the highest-quality PDF possible.
