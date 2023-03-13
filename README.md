@@ -9,11 +9,11 @@ This is an automated, all-in-one scraper to convert VitalSource textbooks into P
 - Correct page numbers (including Roman numerals at the beginning). There might be some issues with wierd page numbers at the end
   of the book.
 - Table of contents creation.
-- No funny stuff.
-- Almost completly transparent scraping. No wierd endpoints are used and no hacky scraping is preformed. All actions are ones that a normal user would do.
+- No funny stuff. No wierd endpoints are used and no hacky scraping is preformed.
+- Almost completly transparent scraping. All actions are ones that a normal user would do.
 
 The goal of this project is for this to "just work." There are many other VitalSource scrapers out there that are wierd, poorly
-designed, or just don't work. I designed my scraper to be as simple as possible while producing the highest-quality PDF possible.
+designed, or are broken. I designed my scraper to be as simple while producing the highest-quality PDF possible.
 
 ## Install
 
@@ -50,4 +50,4 @@ Once all images are downloaded, a PDF is created.
 
 Then `pytesseract` is used to add text to the page images.
 
-Finally, the table of contents is scraped and added to the PDF. 
+Finally, the table of contents is scraped and added to the PDF.
