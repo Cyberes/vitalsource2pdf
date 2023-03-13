@@ -1,0 +1,6 @@
+selenium
+webdriver-manager
+tqdm
+pillow
+pyautogui
+selenium-wire
