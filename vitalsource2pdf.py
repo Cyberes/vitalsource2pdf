@@ -17,7 +17,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--output', default='./VitalSource/')
 parser.add_argument('--isbn', required=True)
 parser.add_argument('--delay', default=2, type=int, help='Delay between pages to let them load in seconds.')
-parser.add_argument('--pages', default=None, type=int, help='Override how many pages to save.') # TODO
+parser.add_argument('--pages', default=None, type=int, help='Override how many pages to save.')  # TODO
+parser.add_argument('--start-page', default=0, type=int, help='Start on this page. Pages start at zero and include any non-numbered pages.')
 parser.add_argument('--disable-web-security', action='store_true', help="If pages aren't loading then you can try disabling CORS protections.")
 args = parser.parse_args()
 
@@ -62,15 +63,17 @@ def load_book_page(page_id):
         time.sleep(1)
 
 
-load_book_page(0)
+page_num = args.start_page
+load_book_page(page_num)
 
 _, total_pages = get_num_pages()
 print('Total number of pages:', total_pages)
 
 page_urls = set()
 failed_pages = set()
-page_num = 0
+small_pages_redo = set()
 bar = tqdm(total=total_pages)
+bar.update(page_num)
 while page_num < total_pages + 1:
     time.sleep(args.delay)
     img_data = None
@@ -119,9 +122,7 @@ while page_num < total_pages + 1:
         bar.write(f'Failed to get a URL for page {page_num}, retrying later.')
         failed_pages.add(page_num)
     else:
-        del driver.requests
         page, _ = get_num_pages()
-
         # If this isn't a numbered page we will need to increment the page count
         try:
             int(page)
@@ -137,12 +138,16 @@ while page_num < total_pages + 1:
 
         # Re-save the image to make sure it's in the correct format
         img = Image.open(dl_file)
+        if img.width != 2000:
+            bar.write(f'Page {page_num} is only {img.width}px wide, will search for a larger image later.')
+            small_pages_redo.add(page_num)
         img.save(dl_file, format='JPEG', subsampling=0, quality=100)
         del img
 
         bar.write(base_url)
 
     # Move to the next page
+    del driver.requests
     actions = ActionChains(driver)
     actions.send_keys(Keys.RIGHT)
     actions.perform()
@@ -151,6 +156,7 @@ while page_num < total_pages + 1:
     page_num += 1
 
 # TODO: redo failed pages in failed_pages
+# TODO:
 
 driver.close()
 bar.close()

@@ -50,4 +50,4 @@ Once all images are downloaded, a PDF is created.
 
 Then `pytesseract` is used to add text to the page images.
 
-Finally, the table of contents is scraped and added to the PDF.
+Finally, the table of contents is scraped and added to the PDF. 
