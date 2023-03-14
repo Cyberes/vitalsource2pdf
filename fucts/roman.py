@@ -35,3 +35,27 @@ def roman_sort_with_ints(arr):
 
     sorted_arr = sorted(arr, key=int_or_roman)
     return sorted_arr
+
+
+def try_convert_int(item):
+    try:
+        return int(item)
+    except ValueError:
+        return item
+
+
+def move_integers_to_end(lst):
+    non_integers = []
+    integers = []
+    for elem in lst:
+        if isinstance(elem, int):
+            integers.append(elem)
+        else:
+            non_integers.append(elem)
+    return non_integers + integers
+
+
+def move_romans_to_front(arr):
+    arr_sorted = sorted(arr, key=lambda x: isinstance(x, int))
+    arr_sorted.insert(0, arr_sorted.pop(arr_sorted.index(0)))
+    return arr_sorted

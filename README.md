@@ -18,8 +18,11 @@ designed, or are broken. I designed my scraper to be as simple while producing t
 ## Install
 
 ```bash
+sudo apt install ocrmypdf jbig2dec
 pip install -r requirements.txt
 ```
+
+[//]: # (You also need the JBIG2 encoder, which can either be [built from source]&#40;https://ocrmypdf.readthedocs.io/en/latest/jbig2.html&#41;.)
 
 Make sure you have Chrome installed as it uses Selenium. The Webdriver binary will be automatically downloaded.
 
