@@ -4,3 +4,4 @@ tqdm
 pillow
 pyautogui
 selenium-wire
+img2pdf

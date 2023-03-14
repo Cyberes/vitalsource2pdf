@@ -40,6 +40,8 @@ If your network is slow, use `--delay` to allow more time for the files to downl
 Guide you through step-by-step. You are expected to have the required technical knowledge and understand what
 is happening behind the scenes in order to troubleshoot any issues.
 
+You will also have to double check the output PDF to make sure everything is as it should be.
+
 ### How it Works
 
 This scraper uses Selenium to load the ebook viewer webpage. It then navigates through the book page by page and records network
