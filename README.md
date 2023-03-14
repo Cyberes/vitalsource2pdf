@@ -35,6 +35,8 @@ You can use `--output` to control where the files are created. By default it cre
 
 If your network is slow, use `--delay` to allow more time for the files to download.
 
+Make sure to leave the window maximized as the content scaling will mess with the scraper.
+
 ### What This Scraper Doesn't Do
 
 Guide you through step-by-step. You are expected to have the required technical knowledge and understand what

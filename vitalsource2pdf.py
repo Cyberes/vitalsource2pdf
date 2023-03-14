@@ -21,7 +21,7 @@ parser.add_argument('--isbn', required=True)
 parser.add_argument('--delay', default=2, type=int, help='Delay between pages to let them load in seconds.')
 parser.add_argument('--pages', default=None, type=int, help='Override how many pages to save.')  # TODO
 parser.add_argument('--start-page', default=0, type=int, help='Start on this page. Pages start at zero and include any non-numbered pages.')
-parser.add_argument('--end-page', default=0, type=int, help='End on this page.')
+parser.add_argument('--end-page', default=-1, type=int, help='End on this page.')
 parser.add_argument('--chrome-exe', default=None, type=str, help='Path to the Chrome executable. Leave blank to auto-detect.')
 parser.add_argument('--disable-web-security', action='store_true', help="If pages aren't loading then you can try disabling CORS protections.")
 args = parser.parse_args()
@@ -68,6 +68,7 @@ def load_book_page(page_id):
         time.sleep(1)
 
 
+driver.maximize_window()
 page_num = args.start_page
 load_book_page(page_num)
 
@@ -103,7 +104,6 @@ while page_num < total_pages + 1:
     if not base_url:
         bar.write(f'Failed to get a URL for page {page_num}, retrying later.')
         failed_pages.add(page_num)
-        continue
     else:
         page_urls.add((page, base_url))
         bar.write(base_url)
@@ -119,18 +119,15 @@ while page_num < total_pages + 1:
     if page_num == args.end_page:
         bar.write(f'Exiting on page {page_num}.')
         break
-    if page == total_pages:
-        bar.write(f'Book completed, exiting.')
-        break
 
-    try:
-        if driver.execute_script(f'return document.getElementsByClassName("IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce")[0].disabled'):  # not driver.find_elements(By.CLASS_NAME, 'IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce')[0].is_enabled():
-            bar.write(f'Book completed, exiting.')
-            break
-    except IndexError:
-        pass
-    except selenium.common.exceptions.JavascriptException:
-        pass
+    # On the first page the back arrow is disabled and will trigger this
+    if isinstance(page_num, int) and page_num > 0:
+        try:
+            if driver.execute_script(f'return document.getElementsByClassName("IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce")[0].disabled'):  # not driver.find_elements(By.CLASS_NAME, 'IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce')[0].is_enabled():
+                bar.write(f'Book completed, exiting.')
+                break
+        except selenium.common.exceptions.JavascriptException:
+            pass
 
     # Move to the next page
     del driver.requests
@@ -141,15 +138,43 @@ while page_num < total_pages + 1:
     page_num += 1
 bar.close()
 
-# TODO: redo failed_pages items
+print('Re-doing failed pages...')
+bar = tqdm(total=len(failed_pages))
+for page in failed_pages:
+    load_book_page(page)
+    time.sleep(args.delay)
+    retry_delay = 5
+    base_url = None
+    for page_retry in range(3):  # retry the page max this many times
+        largest_size = 0
+        for find_img_retry in range(3):
+            for request in driver.requests:
+                if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
+                    base_url = request.url.split('/')
+                    del base_url[-1]
+                    base_url = '/'.join(base_url)
+            time.sleep(1)
+        if base_url:
+            break
+        bar.write(f'Could not find a matching image for page {page_num}, sleeping {retry_delay}s...')
+        time.sleep(retry_delay)
+        retry_delay += 5
+    page, _ = get_num_pages()
+    if not base_url:
+        bar.write(f'Failed to get a URL for page {page_num}, retrying later.')
+        failed_pages.add(page_num)
+    else:
+        page_urls.add((page, base_url))
+        bar.write(base_url)
+        del driver.requests
 
 time.sleep(1)
 print('All pages scraped! Now downloading images...')
 
 bar = tqdm(total=len(page_urls))
 for page, base_url in page_urls:
+    success = False
     for retry in range(6):
-        success = False
         del driver.requests
         time.sleep(args.delay)
         driver.get(f'{base_url.strip("/")}/2000')  # have to load the page first for cookies reasons
@@ -179,11 +204,10 @@ for page, base_url in page_urls:
             img.save(dl_file, format='JPEG', subsampling=0, quality=100)
             del img
             success = True
-        else:
-            bar.write(f'Failed to download image: {base_url}')
-            break
         if success:
             break
+    if not success:
+        bar.write(f'Failed to download image: {base_url}')
     bar.update()
 bar.close()
 driver.close()
