@@ -1,15 +1,5 @@
 from typing import List
 
-
-def roman_sort(nums: List[str]) -> List[str]:
-    """
-    Contributed by ChatGPT.
-    """
-    values = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
-    sorted_nums = sorted(nums, key=lambda x: sum(values[c.upper()] for c in x))
-    return sorted_nums
-
-
 def roman_sort_with_ints(arr):
     """
     Contributed by ChatGPT, who didn't know how to use .upper()
