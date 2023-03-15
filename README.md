@@ -6,14 +6,13 @@ This is an automated, all-in-one scraper to convert VitalSource textbooks into P
 
 - Automated download of pages.
 - Automated OCR.
-- Correct page numbers (including Roman numerals at the beginning). There might be some issues with wierd page numbers at the end
-  of the book.
+- Correct page numbering (including Roman numerals at the beginning).
 - Table of contents creation.
-- No funny stuff. No wierd endpoints are used and no hacky scraping is preformed.
+- No funny stuff. No weird endpoints are used and no hacky scraping is preformed.
 - Almost completly transparent. All actions are ones that a normal user would do.
 
-The goal of this project is for this to "just work." There are many other VitalSource scrapers out there that are wierd, poorly
-designed, or are broken. I designed my scraper to be as simple while producing the highest-quality PDF possible.
+The goal of this project is for this to "just work." There are many other VitalSource scrapers out there that are weird, poorly
+designed, or broken. I designed my scraper to be simple while producing the highest-quality PDF possible.
 
 ## Install
 
@@ -21,8 +20,6 @@ designed, or are broken. I designed my scraper to be as simple while producing t
 sudo apt install ocrmypdf jbig2dec
 pip install -r requirements.txt
 ```
-
-[//]: # (You also need the JBIG2 encoder, which can either be [built from source]&#40;https://ocrmypdf.readthedocs.io/en/latest/jbig2.html&#41;.)
 
 Make sure you have Chrome installed. If you have both Chrome and Chrominium you can use `--chrome-exe` to specify the path to `google-chrome`.
 
@@ -42,6 +39,8 @@ If your network is slow, use `--delay` to allow more time for the files to downl
 
 Make sure to leave the window maximized as the content scaling will mess with the scraper.
 
+You may want to run the scraper two or three times to make sure you have downloaded all the pages.
+
 ### What This Scraper Doesn't Do
 
 Guide you through step-by-step. You are expected to have the required technical knowledge and understand what
@@ -54,9 +53,3 @@ You will also have to double check the output PDF to make sure everything is as 
 This scraper uses Selenium to load the ebook viewer webpage. It then navigates through the book page by page and records network
 requests. After each page it will analyze the requests and find one matching the format of the page image. It then saves
 that request to a `.jpg`.
-
-Once all images are downloaded, a PDF is created.
-
-Then `pytesseract` is used to add text to the page images.
-
-Finally, the table of contents is scraped and added to the PDF. 

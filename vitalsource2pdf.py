@@ -11,7 +11,7 @@ from pathlib import Path
 import img2pdf
 import selenium
 from PIL import Image
-from PyPDF2 import PdfMerger, PdfReader
+from PyPDF2 import PdfMerger, PdfReader, PdfWriter
 from pagelabels import PageLabelScheme, PageLabels
 from pdfrw import PdfReader as pdfrw_reader
 from pdfrw import PdfWriter as pdfrw_writer
@@ -37,6 +37,7 @@ parser.add_argument('--language', default='eng', help='OCR language. Default: "e
 parser.add_argument('--skip-scrape', action='store_true', help="Don't scrape anything, just re-build the PDF from existing files.")
 parser.add_argument('--only-scrape-metadata', action='store_true', help="Similar to --skip-scrape, but only scrape the metadata.")
 parser.add_argument('--skip-ocr', action='store_true', help="Don't do any OCR.")
+parser.add_argument('--compress', action='store_true', help="Run compression and optimization. Probably won't do anything as there isn't much more compression that can be done.")
 args = parser.parse_args()
 
 args.output = Path(args.output)
@@ -46,6 +47,7 @@ ebook_files = args.output / args.isbn
 ebook_files.mkdir(exist_ok=True, parents=True)
 
 book_info = {}
+non_number_pages = 0
 
 
 def get_num_pages():
@@ -53,9 +55,10 @@ def get_num_pages():
         try:
             total = int(driver.execute_script('return document.getElementsByClassName("sc-knKHOI gGldJU")[0].innerHTML').strip().split('/')[-1].strip())
             try:
-                # This element may be empty so just set it to 0
+                # Get the value of the page number textbox
                 current_page = driver.execute_script('return document.getElementsByClassName("InputControl__input-fbzQBk hDtUvs TextField__InputControl-iza-dmV iISUBf")[0].value')
                 if current_page == '' or not current_page:
+                    # This element may be empty so just set it to 0
                     current_page = 0
             except selenium.common.exceptions.JavascriptException:
                 current_page = 0
@@ -67,6 +70,7 @@ def get_num_pages():
 def load_book_page(page_id):
     driver.get(f'https://bookshelf.vitalsource.com/reader/books/{args.isbn}/pageid/{page_id}')
     get_num_pages()  # Wait for the page to load
+    # Wait for the page loader animation to disappear
     while len(driver.find_elements(By.CLASS_NAME, "sc-AjmGg dDNaMw")):
         time.sleep(1)
 
@@ -79,8 +83,9 @@ if not args.skip_scrape or args.only_scrape_metadata:
     chrome_options.add_argument('--disable-http2')  # VitalSource's shit HTTP2 server is really slow and will sometimes send bad data.
     if args.chrome_exe:
         chrome_options.binary_location = args.chrome_exe  # '/usr/bin/google-chrome'
-    seleniumwire_options = {'disable_encoding': True  # Ask the server not to compress the response
-                            }
+    seleniumwire_options = {
+        'disable_encoding': True  # Ask the server not to compress the response
+    }
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), chrome_options=chrome_options, seleniumwire_options=seleniumwire_options)
 
     driver.get(f'https://bookshelf.vitalsource.com')
@@ -92,7 +97,8 @@ if not args.skip_scrape or args.only_scrape_metadata:
 
     # Get book info
     print('Scraping metadata...')
-    failed = False
+    time.sleep(args.delay * 2)
+    failed = True
     for i in range(5):
         for request in driver.requests:
             if request.url == f'https://jigsaw.vitalsource.com/books/{args.isbn}/pages':
@@ -102,7 +108,6 @@ if not args.skip_scrape or args.only_scrape_metadata:
                     wait += 1
                 if not request.response or not request.response.body:
                     print('Failed to get pages information.')
-                    failed = True
                 else:
                     book_info['pages'] = json.loads(request.response.body.decode())
             elif request.url == f'https://jigsaw.vitalsource.com/info/books.json?isbns={args.isbn}':
@@ -112,7 +117,6 @@ if not args.skip_scrape or args.only_scrape_metadata:
                     wait += 1
                 if not request.response or not request.response.body:
                     print('Failed to get book information.')
-                    failed = True
                 else:
                     book_info['book'] = json.loads(request.response.body.decode())
             elif request.url == f'https://jigsaw.vitalsource.com/books/{args.isbn}/toc':
@@ -121,10 +125,13 @@ if not args.skip_scrape or args.only_scrape_metadata:
                     time.sleep(1)
                     wait += 1
                 if not request.response or not request.response.body:
-                    print('Failed to get TOC information.')
-                    failed = True
+                    print('Failed to get TOC information, only got:', list(book_info.keys()))
                 else:
                     book_info['toc'] = json.loads(request.response.body.decode())
+        if 'pages' not in book_info.keys() or 'book' not in book_info.keys() or 'toc' not in book_info.keys():
+            print('Missing some book data, only got:', list(book_info.keys()))
+        else:
+            failed = False
         if not failed:
             break
         print('Retrying metadata scrape in 10s...')
@@ -135,154 +142,182 @@ if not args.skip_scrape or args.only_scrape_metadata:
         driver.close()
         del driver
 
-if not args.skip_scrape and not args.only_scrape_metadata:
-    _, total_pages = get_num_pages()
-    total_pages = 99999999999999999 if args.start_page > 0 else total_pages
-    print('Total number of pages:', total_pages)
+    if not args.only_scrape_metadata:
+        _, total_pages = get_num_pages()
 
-    page_urls = set()
-    failed_pages = set()
-    small_pages_redo = set()
-    bar = tqdm(total=total_pages)
-    bar.update(page_num)
-    while page_num < total_pages + 1:
-        time.sleep(args.delay)
-        retry_delay = 5
-        base_url = None
-        for page_retry in range(3):  # retry the page max this many times
-            largest_size = 0
-            for find_img_retry in range(3):
-                for request in driver.requests:
-                    if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
-                        base_url = request.url.split('/')
-                        del base_url[-1]
-                        base_url = '/'.join(base_url)
-                time.sleep(1)
-            if base_url:
-                break
-            bar.write(f'Could not find a matching image for page {page_num}, sleeping {retry_delay}s...')
-            time.sleep(retry_delay)
-            retry_delay += 5
+        print('You specified a start page so ignore the very large page count.')
+        total_pages = 99999999999999999 if args.start_page > 0 else total_pages
 
-        page, _ = get_num_pages()
-        if not base_url:
-            bar.write(f'Failed to get a URL for page {page_num}, retrying later.')
-            failed_pages.add(page_num)
-        else:
-            page_urls.add((page, base_url))
-            bar.write(base_url)
-            # If this isn't a numbered page we will need to increment the page count
-            try:
-                int(page)
-            except ValueError:
-                total_pages += 1
-                bar.write(f'Non-number page {page}, increasing page count by 1 to: {total_pages}')
-                bar.total = total_pages
-                bar.refresh()
+        print('Total number of pages:', total_pages)
+        print('Scraping pages...')
 
-        if page_num == args.end_page:
-            bar.write(f'Exiting on page {page_num}.')
-            break
-
-        # On the first page the back arrow is disabled and will trigger this
-        if isinstance(page_num, int) and page_num > 0:
-            try:
-                if driver.execute_script(f'return document.getElementsByClassName("IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce")[0].disabled'):  # not driver.find_elements(By.CLASS_NAME, 'IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce')[0].is_enabled():
-                    bar.write(f'Book completed, exiting.')
-                    break
-            except selenium.common.exceptions.JavascriptException:
-                pass
-
-        # Move to the next page
-        del driver.requests
-        actions = ActionChains(driver)
-        actions.send_keys(Keys.RIGHT)
-        actions.perform()
-        bar.update()
-        page_num += 1
-    bar.close()
-
-    print('Re-doing failed pages...')
-    bar = tqdm(total=len(failed_pages))
-    for page in failed_pages:
-        load_book_page(page)
-        time.sleep(args.delay)
-        retry_delay = 5
-        base_url = None
-        for page_retry in range(3):  # retry the page max this many times
-            largest_size = 0
-            for find_img_retry in range(3):
-                for request in driver.requests:
-                    if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
-                        base_url = request.url.split('/')
-                        del base_url[-1]
-                        base_url = '/'.join(base_url)
-                time.sleep(1)
-            if base_url:
-                break
-            bar.write(f'Could not find a matching image for page {page_num}, sleeping {retry_delay}s...')
-            time.sleep(retry_delay)
-            retry_delay += 5
-        page, _ = get_num_pages()
-        if not base_url:
-            bar.write(f'Failed to get a URL for page {page_num}, retrying later.')
-            failed_pages.add(page_num)
-        else:
-            page_urls.add((page, base_url))
-            bar.write(base_url)
-            del driver.requests
-
-    time.sleep(1)
-    print('All pages scraped! Now downloading images...')
-
-    bar = tqdm(total=len(page_urls))
-    for page, base_url in page_urls:
-        success = False
-        for retry in range(6):
-            del driver.requests
-            time.sleep(args.delay)
-            driver.get(f'{base_url.strip("/")}/2000')  # have to load the page first for cookies reasons
+        page_urls = set()
+        failed_pages = set()
+        small_pages_redo = set()
+        bar = tqdm(total=total_pages)
+        bar.update(page_num)
+        while page_num < total_pages + 1:
             time.sleep(args.delay)
             retry_delay = 5
-            img_data = None
+            base_url = None
             for page_retry in range(3):  # retry the page max this many times
                 largest_size = 0
                 for find_img_retry in range(3):
                     for request in driver.requests:
                         if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
-                            img_data = request.response.body
-                            break
-            dl_file = ebook_files / f'{page}.jpg'
-            if img_data:
-                with open(dl_file, 'wb') as file:
-                    file.write(img_data)
-                # Re-save the image to make sure it's in the correct format
-                img = Image.open(dl_file)
-                if img.width != 2000:
-                    bar.write(f'Image too small at {img.width}px wide, retrying: {base_url}')
-                    driver.get('https://google.com')
-                    time.sleep(8)
-                    load_book_page(0)
-                    time.sleep(8)
-                    continue
-                img.save(dl_file, format='JPEG', subsampling=0, quality=100)
-                del img
-                success = True
-            if success:
+                            base_url = request.url.split('/')
+                            del base_url[-1]
+                            base_url = '/'.join(base_url)
+                    time.sleep(1)
+                if base_url:
+                    break
+                bar.write(f'Could not find a matching image for page {page_num}, sleeping {retry_delay}s...')
+                time.sleep(retry_delay)
+                retry_delay += 5
+
+            page, _ = get_num_pages()
+
+            if not base_url:
+                bar.write(f'Failed to get a URL for page {page_num}, retrying later.')
+                failed_pages.add(page_num)
+            else:
+                page_urls.add((page, base_url))
+                bar.write(base_url)
+                # If this isn't a numbered page we will need to increment the page count
+                try:
+                    int(page)
+                except ValueError:
+                    total_pages += 1
+                    non_number_pages += 1
+                    bar.write(f'Non-number page {page}, increasing page count by 1 to: {total_pages}')
+                    bar.total = total_pages
+                    bar.refresh()
+
+            if page_num == args.end_page:
+                bar.write(f'Exiting on page {page_num}.')
                 break
-        if not success:
-            bar.write(f'Failed to download image: {base_url}')
-        bar.update()
-    bar.close()
-    driver.close()
-    del driver
+
+            # On the first page the back arrow is disabled and will trigger this
+            if isinstance(page_num, int) and page_num > 0:
+                try:
+                    # If a page forward/backwards button is disabled
+                    if driver.execute_script(f'return document.getElementsByClassName("IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce")[0].disabled'):
+                        bar.write(f'Book completed, exiting.')
+                        break
+                except selenium.common.exceptions.JavascriptException:
+                    pass
+
+            # Move to the next page
+            del driver.requests
+            actions = ActionChains(driver)
+            actions.send_keys(Keys.RIGHT)
+            actions.perform()
+            bar.update()
+            page_num += 1
+        bar.close()
+
+        print('Re-doing failed pages...')
+        bar = tqdm(total=len(failed_pages))
+        for page in failed_pages:
+            load_book_page(page)
+            time.sleep(args.delay)
+            retry_delay = 5
+            base_url = None
+            for page_retry in range(3):  # retry the page max this many times
+                largest_size = 0
+                for find_img_retry in range(3):
+                    for request in driver.requests:
+                        if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
+                            base_url = request.url.split('/')
+                            del base_url[-1]
+                            base_url = '/'.join(base_url)
+                    time.sleep(1)
+                if base_url:
+                    break
+                bar.write(f'Could not find a matching image for page {page_num}, sleeping {retry_delay}s...')
+                time.sleep(retry_delay)
+                retry_delay += 5
+            page, _ = get_num_pages()
+            if not base_url:
+                bar.write(f'Failed to get a URL for page {page_num}, retrying later.')
+                failed_pages.add(page_num)
+            else:
+                page_urls.add((page, base_url))
+                bar.write(base_url)
+                del driver.requests
+            bar.update(1)
+        bar.close()
+
+        time.sleep(1)
+        print('All pages scraped! Now downloading images...')
+
+        bar = tqdm(total=len(page_urls))
+        for page, base_url in page_urls:
+            success = False
+            for retry in range(6):
+                del driver.requests
+                time.sleep(args.delay / 2)
+                driver.get(f'{base_url.strip("/")}/2000')
+                time.sleep(args.delay / 2)
+                retry_delay = 5
+                img_data = None
+                for page_retry in range(3):  # retry the page max this many times
+                    largest_size = 0
+                    for find_img_retry in range(3):
+                        for request in driver.requests:
+                            if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
+                                img_data = request.response.body
+                                break
+                dl_file = ebook_files / f'{page}.jpg'
+                if img_data:
+                    with open(dl_file, 'wb') as file:
+                        file.write(img_data)
+                    # Re-save the image to make sure it's in the correct format
+                    img = Image.open(dl_file)
+                    if img.width != 2000:
+                        bar.write(f'Image too small at {img.width}px wide, retrying: {base_url}')
+                        driver.get('https://google.com')
+                        time.sleep(8)
+                        load_book_page(0)
+                        time.sleep(8)
+                        continue
+                    img.save(dl_file, format='JPEG', subsampling=0, quality=100)
+                    del img
+                    success = True
+                if success:
+                    break
+            if not success:
+                bar.write(f'Failed to download image: {base_url}')
+            bar.update()
+        bar.close()
+        driver.close()
+        del driver
 else:
     print('Page scrape skipped...')
 
+# Sometimes the book skips a page. Add a blank page if thats the case.
+print('Checking for blank pages...')
+existing_page_files = move_romans_to_front(roman_sort_with_ints([try_convert_int(str(x.stem)) for x in list(ebook_files.iterdir())]))
+if non_number_pages == 0:  # We might not have scraped so this number needs to be updated.
+    for item in existing_page_files:
+        if isinstance(try_convert_int(item), str):
+            non_number_pages += 1
+for page in tqdm(iterable=existing_page_files):
+    page_i = try_convert_int(page)
+    if isinstance(page_i, int) and page_i > 0:
+        page_i += non_number_pages
+        last_page_i = try_convert_int(existing_page_files[page_i - 1])
+        if isinstance(last_page_i, int):
+            last_page_i = last_page_i + non_number_pages
+            if last_page_i != page_i - 1:
+                img = Image.new('RGB', (2000, 2588), (255, 255, 255))
+                img.save(ebook_files / f'{int(page) - 1}.jpg')
+                tqdm.write(f'Created blank image for page {int(page) - 1}.')
+
 print('Building PDF...')
 raw_pdf_file = args.output / f'{args.isbn} RAW.pdf'
-pages = move_romans_to_front(roman_sort_with_ints([try_convert_int(str(x.stem)) for x in list(ebook_files.iterdir())]))
-page_files = [str(ebook_files / f'{x}.jpg') for x in pages]
+existing_page_files = move_romans_to_front(roman_sort_with_ints([try_convert_int(str(x.stem)) for x in list(ebook_files.iterdir())]))
+page_files = [str(ebook_files / f'{x}.jpg') for x in existing_page_files]
 pdf = img2pdf.convert(page_files)
 with open(raw_pdf_file, 'wb') as f:
     f.write(pdf)
@@ -323,7 +358,7 @@ _, tmpfile = tempfile.mkstemp()
 pdf_merger.write(open(tmpfile, 'wb'))
 
 romans_end = 0
-for p in pages:
+for p in existing_page_files:
     if isinstance(p, str):
         romans_end += 1
 
@@ -363,4 +398,13 @@ else:
 
 os.remove(tmpfile)
 
-# TODO: fix blank pages causing duplicaged pages
+if args.compress:
+    print('Compressing PDF...')
+    # https://pypdf2.readthedocs.io/en/latest/user/file-size.html
+    reader = PdfReader(args.output / f'{title}.pdf')
+    writer = PdfWriter()
+    for page in reader.pages:
+        page.compress_content_streams()  # This is CPU intensive!
+        writer.add_page(page)
+    with open(args.output / f'{title} compressed.pdf', 'wb') as f:
+        writer.write(f)
