@@ -8,7 +8,7 @@ This is an automated, all-in-one scraper to convert VitalSource textbooks into P
 - Automated OCR.
 - Correct page numbering (including Roman numerals at the beginning).
 - Table of contents creation.
-- No funny stuff. No weird endpoints are used and no hacky scraping is preformed.
+- No funny stuff. No weird endpoints and no hacky scraping.
 - Almost completely transparent. All actions are ones that a normal user would do.
 
 The goal of this project is for this to "just work." There are many other VitalSource scrapers out there that are weird, poorly
