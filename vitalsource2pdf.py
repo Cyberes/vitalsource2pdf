@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 import argparse
+import json
+import os
+import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
 import img2pdf
 import selenium
 from PIL import Image
+from PyPDF2 import PdfMerger, PdfReader
+from pagelabels import PageLabelScheme, PageLabels
+from pdfrw import PdfReader as pdfrw_reader
+from pdfrw import PdfWriter as pdfrw_writer
 from selenium.webdriver import ActionChains, Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -14,7 +22,7 @@ from seleniumwire import webdriver
 from tqdm import tqdm
 from webdriver_manager.chrome import ChromeDriverManager
 
-from fucts.roman import roman_sort_with_ints, move_romans_to_front, try_convert_int
+from fucts.roman import move_romans_to_front, roman_sort_with_ints, try_convert_int
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', default='./VitalSource/')
@@ -27,16 +35,43 @@ parser.add_argument('--chrome-exe', default=None, type=str, help='Path to the Ch
 parser.add_argument('--disable-web-security', action='store_true', help="If pages aren't loading then you can try disabling CORS protections.")
 parser.add_argument('--language', default='eng', help='OCR language. Default: "eng"')
 parser.add_argument('--skip-scrape', action='store_true', help="Don't scrape anything, just re-build the PDF from existing files.")
+parser.add_argument('--only-scrape-metadata', action='store_true', help="Similar to --skip-scrape, but only scrape the metadata.")
+parser.add_argument('--skip-ocr', action='store_true', help="Don't do any OCR.")
 args = parser.parse_args()
 
 args.output = Path(args.output)
 args.output.mkdir(exist_ok=True, parents=True)
-ebook_output = args.output / f'{args.isbn}.pdf'
-ebook_output_ocr = args.output / f'{args.isbn} OCR.pdf'
+# ebook_output = args.output / f'{args.isbn}.pdf'
 ebook_files = args.output / args.isbn
 ebook_files.mkdir(exist_ok=True, parents=True)
 
-if not args.skip_scrape:
+book_info = {}
+
+
+def get_num_pages():
+    while True:
+        try:
+            total = int(driver.execute_script('return document.getElementsByClassName("sc-knKHOI gGldJU")[0].innerHTML').strip().split('/')[-1].strip())
+            try:
+                # This element may be empty so just set it to 0
+                current_page = driver.execute_script('return document.getElementsByClassName("InputControl__input-fbzQBk hDtUvs TextField__InputControl-iza-dmV iISUBf")[0].value')
+                if current_page == '' or not current_page:
+                    current_page = 0
+            except selenium.common.exceptions.JavascriptException:
+                current_page = 0
+            return current_page, total
+        except selenium.common.exceptions.JavascriptException:
+            time.sleep(1)
+
+
+def load_book_page(page_id):
+    driver.get(f'https://bookshelf.vitalsource.com/reader/books/{args.isbn}/pageid/{page_id}')
+    get_num_pages()  # Wait for the page to load
+    while len(driver.find_elements(By.CLASS_NAME, "sc-AjmGg dDNaMw")):
+        time.sleep(1)
+
+
+if not args.skip_scrape or args.only_scrape_metadata:
     chrome_options = webdriver.ChromeOptions()
     if args.disable_web_security:
         chrome_options.add_argument('--disable-web-security')
@@ -44,39 +79,63 @@ if not args.skip_scrape:
     chrome_options.add_argument('--disable-http2')  # VitalSource's shit HTTP2 server is really slow and will sometimes send bad data.
     if args.chrome_exe:
         chrome_options.binary_location = args.chrome_exe  # '/usr/bin/google-chrome'
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), chrome_options=chrome_options)
+    seleniumwire_options = {'disable_encoding': True  # Ask the server not to compress the response
+                            }
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), chrome_options=chrome_options, seleniumwire_options=seleniumwire_options)
 
     driver.get(f'https://bookshelf.vitalsource.com')
     input('Press ENTER once logged in...')
-
-
-    def get_num_pages():
-        while True:
-            try:
-                total = int(driver.execute_script('return document.getElementsByClassName("sc-knKHOI gGldJU")[0].innerHTML').strip().split('/')[-1].strip())
-                try:
-                    # This element may be empty so just set it to 0
-                    current_page = driver.execute_script('return document.getElementsByClassName("InputControl__input-fbzQBk hDtUvs TextField__InputControl-iza-dmV iISUBf")[0].value')
-                    if current_page == '' or not current_page:
-                        current_page = 0
-                except selenium.common.exceptions.JavascriptException:
-                    current_page = 0
-                return current_page, total
-            except selenium.common.exceptions.JavascriptException:
-                time.sleep(1)
-
-
-    def load_book_page(page_id):
-        driver.get(f'https://bookshelf.vitalsource.com/reader/books/{args.isbn}/pageid/{page_id}')
-        get_num_pages()  # Wait for the page to load
-        while len(driver.find_elements(By.CLASS_NAME, "sc-AjmGg dDNaMw")):
-            time.sleep(1)
-
 
     driver.maximize_window()
     page_num = args.start_page
     load_book_page(page_num)
 
+    # Get book info
+    print('Scraping metadata...')
+    failed = False
+    for i in range(5):
+        for request in driver.requests:
+            if request.url == f'https://jigsaw.vitalsource.com/books/{args.isbn}/pages':
+                wait = 0
+                while not request.response and wait < 30:
+                    time.sleep(1)
+                    wait += 1
+                if not request.response or not request.response.body:
+                    print('Failed to get pages information.')
+                    failed = True
+                else:
+                    book_info['pages'] = json.loads(request.response.body.decode())
+            elif request.url == f'https://jigsaw.vitalsource.com/info/books.json?isbns={args.isbn}':
+                wait = 0
+                while not request.response and wait < 30:
+                    time.sleep(1)
+                    wait += 1
+                if not request.response or not request.response.body:
+                    print('Failed to get book information.')
+                    failed = True
+                else:
+                    book_info['book'] = json.loads(request.response.body.decode())
+            elif request.url == f'https://jigsaw.vitalsource.com/books/{args.isbn}/toc':
+                wait = 0
+                while not request.response and wait < 30:
+                    time.sleep(1)
+                    wait += 1
+                if not request.response or not request.response.body:
+                    print('Failed to get TOC information.')
+                    failed = True
+                else:
+                    book_info['toc'] = json.loads(request.response.body.decode())
+        if not failed:
+            break
+        print('Retrying metadata scrape in 10s...')
+        load_book_page(page_num)
+        time.sleep(10)
+
+    if args.only_scrape_metadata:
+        driver.close()
+        del driver
+
+if not args.skip_scrape and not args.only_scrape_metadata:
     _, total_pages = get_num_pages()
     total_pages = 99999999999999999 if args.start_page > 0 else total_pages
     print('Total number of pages:', total_pages)
@@ -218,22 +277,90 @@ if not args.skip_scrape:
     driver.close()
     del driver
 else:
-    print('Scrape skipped...')
+    print('Page scrape skipped...')
 
 print('Building PDF...')
-page_files = [str(ebook_files / f'{x}.jpg') for x in move_romans_to_front(roman_sort_with_ints([try_convert_int(str(x.stem)) for x in list(ebook_files.iterdir())]))]
+raw_pdf_file = args.output / f'{args.isbn} RAW.pdf'
+pages = move_romans_to_front(roman_sort_with_ints([try_convert_int(str(x.stem)) for x in list(ebook_files.iterdir())]))
+page_files = [str(ebook_files / f'{x}.jpg') for x in pages]
 pdf = img2pdf.convert(page_files)
-with open(ebook_output, 'wb') as f:
+with open(raw_pdf_file, 'wb') as f:
     f.write(pdf)
 
-# TODO: maybe scrape book title to name the PDF file?
-# TODO: also maybe embed the title in the PDF file?
-title = 'test title'
+if 'book' in book_info.keys() and 'books' in book_info['book'].keys() and len(book_info['book']['books']):
+    title = book_info['book']['books'][0]['title']
+    author = book_info['book']['books'][0]['author']
+else:
+    title = args.isbn
+    author = 'Unknown'
 
-print('Running OCR...')
-subprocess.run(f'ocrmypdf -l {args.language} --title "{title}" --jobs $(nproc) --output-type pdfa "{ebook_output}" "{ebook_output_ocr}"', shell=True)
+if not args.skip_ocr:
+    print('Running OCR...')
+    ocr_in = raw_pdf_file
+    _, raw_pdf_file = tempfile.mkstemp()
+    subprocess.run(f'ocrmypdf -l {args.language} --title "{title}" --jobs $(nproc) --output-type pdfa "{ocr_in}" "{raw_pdf_file}"', shell=True)
+else:
+    ebook_output_ocr = args.output / f'{args.isbn}.pdf'
+    print('Skipping OCR...')
 
-# TODO: scrape table of contents and insert
+# Add metadata
+print('Adding metadata...')
+file_in = open(raw_pdf_file, 'rb')
+pdf_reader = PdfReader(file_in)
+pdf_merger = PdfMerger()
+pdf_merger.append(file_in)
 
+pdf_merger.add_metadata({'/Author': author, '/Title': title, '/Creator': f'ISBN: {args.isbn}'})
+
+if 'toc' in book_info.keys():
+    print('Creating TOC...')
+    for item in book_info['toc']:
+        pdf_merger.add_outline_item(item['title'], int(item['cfi'].strip('/')) - 1)
+else:
+    print('Not creating TOC...')
+
+_, tmpfile = tempfile.mkstemp()
+pdf_merger.write(open(tmpfile, 'wb'))
+
+romans_end = 0
+for p in pages:
+    if isinstance(p, str):
+        romans_end += 1
+
+if romans_end > 0:
+    print('Renumbering pages...')
+    reader = pdfrw_reader(tmpfile)
+    labels = PageLabels.from_pdf(reader)
+
+    roman_labels = PageLabelScheme(
+        startpage=0,
+        style='none',
+        prefix='Cover',
+        firstpagenum=1
+    )
+    labels.append(roman_labels)
+
+    roman_labels = PageLabelScheme(
+        startpage=1,
+        style='roman lowercase',
+        firstpagenum=1
+    )
+    labels.append(roman_labels)
+
+    normal_labels = PageLabelScheme(
+        startpage=romans_end,
+        style='arabic',
+        firstpagenum=1
+    )
+    labels.append(normal_labels)
+
+    labels.write(reader)
+    writer = pdfrw_writer()
+    writer.trailer = reader
+    writer.write(args.output / f'{title}.pdf')
+else:
+    shutil.move(tmpfile, args.output / f'{title}.pdf')
+
+os.remove(tmpfile)
 
 # TODO: fix blank pages causing duplicaged pages

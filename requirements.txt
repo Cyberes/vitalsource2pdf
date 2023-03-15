@@ -2,6 +2,7 @@ selenium
 webdriver-manager
 tqdm
 pillow
-pyautogui
 selenium-wire
 img2pdf
+PyPDF2
+git+https://github.com/lovasoa/pagelabels-py.git
