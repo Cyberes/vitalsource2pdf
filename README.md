@@ -2,7 +2,7 @@
 
 _Ultra-high quality PDFs from VitalSource._
 
-This is an automated, all-in-one scraper to convert VitalSource textbooks into PDFs. Features include:
+This is an automated, all-in-one scraper to convert VitalSource textbooks into PDFs with no compromises. Features include:
 
 - Automated download of pages.
 - Automated OCR.
@@ -13,6 +13,12 @@ This is an automated, all-in-one scraper to convert VitalSource textbooks into P
 
 The goal of this project is for this to "just work." There are many other VitalSource scrapers out there that are weird, poorly
 designed, or broken. I designed my scraper to be simple while producing the highest-quality PDF possible.
+
+**This only works with PDF books!** The URL must look something like this: https://bookshelf.vitalsource.com/reader/books/{isbn}/pageid/{page_id}
+
+**This URL format won't work!** https://bookshelf.vitalsource.com/reader/books/{isbn}/epubcfi/6/22[%3Bvnd.vst.idref%3Dt{author}{isbn}c00_02]!/4
+
+Maybe someday the scraper could be updated to work with more book formats...
 
 ## Install
 

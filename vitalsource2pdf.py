@@ -145,7 +145,8 @@ if not args.skip_scrape or args.only_scrape_metadata:
     if not args.only_scrape_metadata:
         _, total_pages = get_num_pages()
 
-        print('You specified a start page so ignore the very large page count.')
+        if args.start_page > 0:
+            print('You specified a start page so ignore the very large page count.')
         total_pages = 99999999999999999 if args.start_page > 0 else total_pages
 
         print('Total number of pages:', total_pages)
