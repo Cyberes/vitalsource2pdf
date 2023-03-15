@@ -22,6 +22,8 @@ Maybe someday the scraper could be updated to work with more book formats...
 
 ## Install
 
+This program only works on Linux. You can use WSL on Windows.
+
 ```bash
 sudo apt install ocrmypdf jbig2dec
 pip install -r requirements.txt
