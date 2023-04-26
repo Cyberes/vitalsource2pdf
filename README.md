@@ -14,6 +14,7 @@ This is an automated, all-in-one scraper to convert VitalSource textbooks into P
 
 - No funny stuff. No weird endpoints and no hacky scraping.
 
+**[OFFICIALLY HATED BY VITALSOURCE](https://github.com/Cyberes/vitalsource2pdf/issues/1)**
   
 
 This scraper is almost completely transparent and all actions are ones that a normal user would do. This allows us to defeat all of [VitalSource's anti-scraping protections](https://get.vitalsource.com/hubfs/Content/INTL/Digital%20Discovery%20Day/Resource%20Page/Resources/Content%20Security%20Position%20Paper.pdf).
