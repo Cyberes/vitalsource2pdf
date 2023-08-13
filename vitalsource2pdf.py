@@ -25,7 +25,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 from fucts.roman import move_romans_to_front, roman_sort_with_ints, try_convert_int
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--output', default='./VitalSource/')
+parser.add_argument('--output', default='./output/')
+parser.add_argument('--yuzu', default=False)
 parser.add_argument('--isbn', required=True)
 parser.add_argument('--delay', default=2, type=int, help='Delay between pages to let them load in seconds.')
 parser.add_argument('--pages', default=None, type=int, help='Override how many pages to save.')  # TODO
@@ -49,14 +50,32 @@ ebook_files.mkdir(exist_ok=True, parents=True)
 book_info = {}
 non_number_pages = 0
 
+platform_identifiers = {
+    'home_url': "https://reader.yuzu.com",
+    'jigsaw_url' "https://jigsaw.yuzu.com"
+    'total_pages': "sc-gFSQbh ognVW",
+    'current_page': "InputControl__input-fbzQBk hDtUvs TextField__InputControl-iza-dmV iISUBf",
+    'page_loader': "sc-hiwPVj hZlgDU",
+    'next_page': "IconButton__button-bQttMI cSDGGI",
+    } if args.yuzu else {
+    'home_url': "https://bookshelf.vitalsource.com",
+    'jigsaw_url' "https://jigsaw.vitalsource.com"
+    'total_pages': "sc-knKHOI gGldJU",
+    'current_page': "InputControl__input-fbzQBk hDtUvs TextField__InputControl-iza-dmV iISUBf",
+    'page_loader': "sc-AjmGg dDNaMw",
+    'next_page': "IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce",
+}
+
+
+
 
 def get_num_pages():
     while True:
         try:
-            total = int(driver.execute_script('return document.getElementsByClassName("sc-knKHOI gGldJU")[0].innerHTML').strip().split('/')[-1].strip())
+            total = int(driver.execute_script('return document.getElementsByClassName("'+platform_identifiers['total_pages']+'")[0].innerHTML').strip().split('/')[-1].strip())
             try:
                 # Get the value of the page number textbox
-                current_page = driver.execute_script('return document.getElementsByClassName("InputControl__input-fbzQBk hDtUvs TextField__InputControl-iza-dmV iISUBf")[0].value')
+                current_page = driver.execute_script('return document.getElementsByClassName("'+platform_identifiers['current_page']+'")[0].value')
                 if current_page == '' or not current_page:
                     # This element may be empty so just set it to 0
                     current_page = 0
@@ -68,10 +87,10 @@ def get_num_pages():
 
 
 def load_book_page(page_id):
-    driver.get(f'https://bookshelf.vitalsource.com/reader/books/{args.isbn}/pageid/{page_id}')
+    driver.get(platform_identifiers['home_url']+'/reader/books/{args.isbn}/pageid/{page_id}')
     get_num_pages()  # Wait for the page to load
     # Wait for the page loader animation to disappear
-    while len(driver.find_elements(By.CLASS_NAME, "sc-AjmGg dDNaMw")):
+    while len(driver.find_elements(By.CLASS_NAME, platform_identifiers['page_loader'])):
         time.sleep(1)
 
 
@@ -88,7 +107,7 @@ if not args.skip_scrape or args.only_scrape_metadata:
     }
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), chrome_options=chrome_options, seleniumwire_options=seleniumwire_options)
 
-    driver.get(f'https://bookshelf.vitalsource.com')
+    driver.get(platform_identifiers['home_url'])
     input('Press ENTER once logged in...')
 
     driver.maximize_window()
@@ -101,7 +120,7 @@ if not args.skip_scrape or args.only_scrape_metadata:
     failed = True
     for i in range(5):
         for request in driver.requests:
-            if request.url == f'https://jigsaw.vitalsource.com/books/{args.isbn}/pages':
+            if request.url == platform_identifiers['jigsaw_url']+f'/books/{args.isbn}/pages':
                 wait = 0
                 while not request.response and wait < 30:
                     time.sleep(1)
@@ -110,7 +129,7 @@ if not args.skip_scrape or args.only_scrape_metadata:
                     print('Failed to get pages information.')
                 else:
                     book_info['pages'] = json.loads(request.response.body.decode())
-            elif request.url == f'https://jigsaw.vitalsource.com/info/books.json?isbns={args.isbn}':
+            elif request.url == platform_identifiers['jigsaw_url']+f'/info/books.json?isbns={args.isbn}':
                 wait = 0
                 while not request.response and wait < 30:
                     time.sleep(1)
@@ -119,7 +138,7 @@ if not args.skip_scrape or args.only_scrape_metadata:
                     print('Failed to get book information.')
                 else:
                     book_info['book'] = json.loads(request.response.body.decode())
-            elif request.url == f'https://jigsaw.vitalsource.com/books/{args.isbn}/toc':
+            elif request.url == platform_identifiers['jigsaw_url']+f'/books/{args.isbn}/toc':
                 wait = 0
                 while not request.response and wait < 30:
                     time.sleep(1)
@@ -165,7 +184,7 @@ if not args.skip_scrape or args.only_scrape_metadata:
                 largest_size = 0
                 for find_img_retry in range(3):
                     for request in driver.requests:
-                        if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
+                        if request.url.startswith(platform_identifiers['jigsaw_url']+f'/books/{args.isbn}/images/'):
                             base_url = request.url.split('/')
                             del base_url[-1]
                             base_url = '/'.join(base_url)
@@ -202,7 +221,8 @@ if not args.skip_scrape or args.only_scrape_metadata:
             if isinstance(page_num, int) and page_num > 0:
                 try:
                     # If a page forward/backwards button is disabled
-                    if driver.execute_script(f'return document.getElementsByClassName("IconButton__button-bQttMI gHMmeA sc-oXPCX mwNce")[0].disabled'):
+                    if driver.execute_script(f'return document.getElementsByClassName("'+
+                                             platform_identifiers['next_page']+'")[0].disabled'):
                         bar.write(f'Book completed, exiting.')
                         break
                 except selenium.common.exceptions.JavascriptException:
@@ -228,7 +248,7 @@ if not args.skip_scrape or args.only_scrape_metadata:
                 largest_size = 0
                 for find_img_retry in range(3):
                     for request in driver.requests:
-                        if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
+                        if request.url.startswith(platform_identifiers['jigsaw_url']+f'/books/{args.isbn}/images/'):
                             base_url = request.url.split('/')
                             del base_url[-1]
                             base_url = '/'.join(base_url)
@@ -266,7 +286,7 @@ if not args.skip_scrape or args.only_scrape_metadata:
                     largest_size = 0
                     for find_img_retry in range(3):
                         for request in driver.requests:
-                            if request.url.startswith(f'https://jigsaw.vitalsource.com/books/{args.isbn}/images/'):
+                            if request.url.startswith(platform_identifiers['jigsaw_url']+f'/books/{args.isbn}/images/'):
                                 img_data = request.response.body
                                 break
                 dl_file = ebook_files / f'{page}.jpg'
