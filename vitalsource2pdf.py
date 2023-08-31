@@ -59,7 +59,7 @@ platform_identifiers = {
     'next_page': "IconButton__button-bQttMI cSDGGI",
     } if args.yuzu else {
     'home_url': "https://bookshelf.vitalsource.com",
-    'jigsaw_url' "https://jigsaw.vitalsource.com"
+    'jigsaw_url': "https://jigsaw.vitalsource.com",
     'total_pages': "sc-knKHOI gGldJU",
     'current_page': "InputControl__input-fbzQBk hDtUvs TextField__InputControl-iza-dmV iISUBf",
     'page_loader': "sc-AjmGg dDNaMw",
