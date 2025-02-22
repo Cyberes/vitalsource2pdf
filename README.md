@@ -4,6 +4,8 @@ _Ultra-high quality PDFs from VitalSource._
 
 **I have graduated and am no longer able to maintain this project. Feel free to fork and build upon my work.**
 
+**<https://github.com/Cyberes/vitalsource2pdf/network>**
+
 This is an automated, all-in-one scraper to convert VitalSource textbooks into PDFs with no compromises. Features include:
 
 - Automated download of pages.
